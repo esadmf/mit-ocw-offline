@@ -5,14 +5,10 @@ import asyncio
 import json
 import re
 from typing import Optional
-from urllib.parse import urljoin
 
 import httpx
 from bs4 import BeautifulSoup
 from rich.console import Console
-from rich.progress import (
-    BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn,
-)
 
 import config
 from db import SessionLocal
@@ -28,20 +24,19 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
-COURSE_URL_RE = re.compile(
-    r"https://ocw\.mit\.edu/courses/[a-z0-9][a-z0-9\-]+/?$"
-)
+COURSE_URL_RE = re.compile(r"https://ocw\.mit\.edu/courses/[a-z0-9][a-z0-9\-]+/?$")
+
+# OCW sub-sitemap URLs embed the course slug in their path, e.g.:
+#   https://ocw.mit.edu/courses/6-0001-intro-to-python/sitemap.xml
+# Extracting the slug from the URL avoids fetching every sub-sitemap.
+SLUG_IN_SITEMAP_URL_RE = re.compile(r"ocw\.mit\.edu/courses/([a-z0-9][a-z0-9-]+)/")
 
 
 # ---------------------------------------------------------------------------
 # HTTP helpers
 # ---------------------------------------------------------------------------
 
-async def _get(
-    client: httpx.AsyncClient,
-    url: str,
-    retries: int = config.REQUEST_RETRIES,
-) -> Optional[str]:
+async def _get(client: httpx.AsyncClient, url: str, retries: int = config.REQUEST_RETRIES) -> Optional[str]:
     for attempt in range(retries):
         try:
             r = await client.get(url, follow_redirects=True, timeout=config.REQUEST_TIMEOUT_SECONDS)
@@ -60,20 +55,17 @@ async def _get(
 # ---------------------------------------------------------------------------
 
 def _parse_sitemap(xml: str) -> tuple[list[str], list[str]]:
-    """Return (sub_sitemaps, course_urls) found in an XML sitemap."""
+    """Return (sub_sitemap_locs, course_urls) from a sitemap or sitemap index."""
     soup = BeautifulSoup(xml, "xml")
-
-    # Sitemap index?
-    sub = [loc.text.strip() for loc in soup.find_all("sitemap")]
-    if sub:
-        locs = [s.find("loc").text.strip() for s in soup.find_all("sitemap") if s.find("loc")]
+    sitemaps = soup.find_all("sitemap")
+    if sitemaps:
+        locs = [s.find("loc").text.strip() for s in sitemaps if s.find("loc")]
         return locs, []
-
-    courses = []
-    for loc in soup.find_all("loc"):
-        url = loc.text.strip()
-        if COURSE_URL_RE.match(url):
-            courses.append(url.rstrip("/"))
+    courses = [
+        loc.text.strip().rstrip("/")
+        for loc in soup.find_all("loc")
+        if COURSE_URL_RE.match(loc.text.strip())
+    ]
     return [], courses
 
 
@@ -87,26 +79,40 @@ async def _collect_course_urls(client: httpx.AsyncClient) -> list[str]:
     sub_sitemaps, courses = _parse_sitemap(xml)
 
     if sub_sitemaps:
-        console.print(f"  Sitemap index with {len(sub_sitemaps)} sub-sitemaps — fetching each…")
+        # Strategy 1: extract slug directly from each sub-sitemap URL.
+        # This costs zero extra HTTP requests.
         for sm_url in sub_sitemaps:
-            await asyncio.sleep(config.REQUEST_DELAY_SECONDS)
-            sub_xml = await _get(client, sm_url)
-            if sub_xml:
-                _, found = _parse_sitemap(sub_xml)
+            m = SLUG_IN_SITEMAP_URL_RE.search(sm_url)
+            if m:
+                courses.append(f"{config.OCW_BASE_URL}/courses/{m.group(1)}")
+
+        if courses:
+            console.print(f"  Extracted {len(courses)} course slugs from sitemap index directly.")
+        else:
+            # Strategy 2: sub-sitemap URLs don't embed the slug — fetch them
+            # concurrently (no per-request delay; sitemaps are lightweight XML).
+            console.print(f"  Fetching {len(sub_sitemaps)} sub-sitemaps concurrently…")
+            sem = asyncio.Semaphore(config.MAX_CONCURRENT_REQUESTS * 3)
+
+            async def fetch_sub(sm_url: str) -> list[str]:
+                async with sem:
+                    sub_xml = await _get(client, sm_url)
+                    return _parse_sitemap(sub_xml)[1] if sub_xml else []
+
+            results = await asyncio.gather(*[fetch_sub(u) for u in sub_sitemaps])
+            for found in results:
                 courses.extend(found)
 
-    # Deduplicate
     courses = list(dict.fromkeys(courses))
 
     if not courses:
-        console.print("[yellow]No courses found in sitemap — trying search page fallback…[/yellow]")
+        console.print("[yellow]No courses found — trying search page fallback…[/yellow]")
         courses = await _fallback_search_crawl(client)
 
     return courses
 
 
 async def _fallback_search_crawl(client: httpx.AsyncClient) -> list[str]:
-    """If sitemap yields nothing, scrape the OCW search/browse page."""
     url = f"{config.OCW_BASE_URL}/search/?s=department_course_numbers.sort_coursenum"
     html = await _get(client, url)
     if not html:
@@ -121,15 +127,35 @@ async def _fallback_search_crawl(client: httpx.AsyncClient) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Metadata extraction
+# Slug-based metadata (free — no HTTP request needed)
+# ---------------------------------------------------------------------------
+
+def _meta_from_slug(slug: str) -> dict:
+    """Extract whatever we can from the slug alone: course number, term, year."""
+    meta: dict = {}
+    parts = slug.split("-")
+    if len(parts) >= 2 and re.match(r"^\d", parts[0]) and re.match(r"^\d", parts[1]):
+        meta["course_number"] = f"{parts[0]}.{parts[1]}"
+    m = re.search(r"\b(19|20)\d{2}\b", slug)
+    if m:
+        meta["year"] = int(m.group())
+    for term in ("fall", "spring", "summer", "january"):
+        if f"-{term}-" in slug or slug.endswith(f"-{term}"):
+            meta["term"] = term.capitalize()
+            break
+    return meta
+
+
+# ---------------------------------------------------------------------------
+# Full metadata extraction (requires fetching the course page)
 # ---------------------------------------------------------------------------
 
 def _extract_metadata(url: str, html: str) -> dict:
     soup = BeautifulSoup(html, "lxml")
     slug = url.rstrip("/").split("/")[-1]
     meta: dict = {"url": url, "slug": slug}
+    meta.update(_meta_from_slug(slug))
 
-    # 1. JSON-LD
     for script in soup.find_all("script", type="application/ld+json"):
         try:
             data = json.loads(script.string or "")
@@ -144,7 +170,6 @@ def _extract_metadata(url: str, html: str) -> dict:
         except (json.JSONDecodeError, AttributeError):
             continue
 
-    # 2. Open Graph
     og = lambda prop: (soup.find("meta", property=prop) or {}).get("content", "") or ""
     if not meta.get("title"):
         meta["title"] = og("og:title").replace(" | MIT OpenCourseWare", "").strip() or None
@@ -152,28 +177,11 @@ def _extract_metadata(url: str, html: str) -> dict:
         meta["description"] = og("og:description") or None
     meta["image_url"] = og("og:image") or None
 
-    # 3. <title> tag
     if not meta.get("title"):
         t = soup.find("title")
         if t:
             meta["title"] = t.text.replace(" | MIT OpenCourseWare", "").strip()
 
-    # 4. Derive course number and term/year from slug
-    # Slug pattern: "6-0001-intro-to-cs-fall-2016"
-    parts = slug.split("-")
-    if len(parts) >= 2 and re.match(r"^\d", parts[0]) and re.match(r"^\d", parts[1]):
-        meta.setdefault("course_number", f"{parts[0]}.{parts[1]}")
-
-    m = re.search(r"\b(19|20)\d{2}\b", slug)
-    if m:
-        meta["year"] = int(m.group())
-
-    for term in ("fall", "spring", "summer", "january"):
-        if f"-{term}-" in slug or slug.endswith(f"-{term}"):
-            meta["term"] = term.capitalize()
-            break
-
-    # 5. Level
     body_text = soup.get_text(" ", strip=True)
     for level in ("Undergraduate", "Graduate"):
         if level.lower() in body_text.lower():
@@ -187,10 +195,7 @@ def _extract_metadata(url: str, html: str) -> dict:
 # Public entry point
 # ---------------------------------------------------------------------------
 
-async def fetch_catalog(
-    limit: Optional[int] = None,
-    skip_metadata: bool = False,
-):
+async def fetch_catalog(limit: Optional[int] = None, skip_metadata: bool = False):
     """Populate the DB with all OCW courses (URLs first, then metadata)."""
     db = SessionLocal()
 
@@ -207,14 +212,19 @@ async def fetch_catalog(
 
         console.print(f"[green]Found {len(course_urls)} courses.[/green]")
 
-        # Insert any new courses
+        # Insert in batches of 100 and commit each batch so courses appear in
+        # the UI progressively rather than all at once at the end.
         new_count = 0
-        for url in course_urls:
-            slug = url.rstrip("/").split("/")[-1]
-            if not db.query(Course).filter_by(slug=slug).first():
-                db.add(Course(slug=slug, url=url))
-                new_count += 1
-        db.commit()
+        batch_size = 100
+        for i in range(0, len(course_urls), batch_size):
+            for url in course_urls[i : i + batch_size]:
+                slug = url.rstrip("/").split("/")[-1]
+                if not db.query(Course).filter_by(slug=slug).first():
+                    course = Course(slug=slug, url=url, **_meta_from_slug(slug))
+                    db.add(course)
+                    new_count += 1
+            db.commit()
+
         console.print(f"  {new_count} new courses added to catalog.")
 
         if skip_metadata:
@@ -222,7 +232,8 @@ async def fetch_catalog(
             db.close()
             return
 
-        # Fetch metadata for courses that don't have a title yet
+        # Enrich with full metadata (titles, descriptions, departments).
+        # Commit every 20 courses so progress is visible in the UI.
         to_enrich = db.query(Course).filter(Course.title.is_(None)).all()
         if not to_enrich:
             console.print("[green]All courses already have metadata.[/green]")
@@ -243,20 +254,11 @@ async def fetch_catalog(
                     if val is not None and hasattr(course, key):
                         setattr(course, key, val)
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console,
-        ) as progress:
-            task = progress.add_task("Enriching metadata…", total=len(to_enrich))
-            batch_size = 20
-            for i in range(0, len(to_enrich), batch_size):
-                batch = to_enrich[i : i + batch_size]
-                await asyncio.gather(*[enrich(c) for c in batch])
-                db.commit()
-                progress.advance(task, len(batch))
+        enrich_batch = 20
+        for i in range(0, len(to_enrich), enrich_batch):
+            await asyncio.gather(*[enrich(c) for c in to_enrich[i : i + enrich_batch]])
+            db.commit()
+            console.print(f"  Metadata: {min(i + enrich_batch, len(to_enrich))}/{len(to_enrich)}")
 
     console.print("[bold green]Catalog fetch complete.[/bold green]")
     db.close()

@@ -4,6 +4,7 @@ Download all pages and assets for a single MIT OCW course.
 import asyncio
 import json
 import re
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -117,6 +118,32 @@ def _asset_links(soup: BeautifulSoup, page_url: str) -> list[tuple[str, str]]:
             seen.add(full)
             results.append((full, t))
     return results
+
+
+# ---------------------------------------------------------------------------
+# OCW site zip extraction
+# ---------------------------------------------------------------------------
+
+def extract_site_zip(course_dir: Path) -> bool:
+    """Find the OCW offline site zip in assets/archive/ and extract to site/."""
+    site_dir = course_dir / "site"
+    if (site_dir / "index.html").exists():
+        return True  # already extracted
+    archive_dir = course_dir / "assets" / "archive"
+    if not archive_dir.exists():
+        return False
+    for zpath in archive_dir.glob("*.zip"):
+        try:
+            with zipfile.ZipFile(zpath) as z:
+                names = z.namelist()
+                if "index.html" in names and any(n.startswith("static_shared/") for n in names):
+                    console.print(f"  Extracting OCW site: {zpath.name}")
+                    site_dir.mkdir(exist_ok=True)
+                    z.extractall(site_dir)
+                    return True
+        except Exception as exc:
+            console.print(f"  [yellow]Zip extraction failed ({zpath.name}): {exc}[/yellow]")
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +335,9 @@ async def download_course(slug: str):
             videos_dir = course_dir / "videos"
             videos_dir.mkdir(exist_ok=True)
             await download_youtube_videos(course.id, unique_yt, videos_dir, db)
+
+        # -- Extract OCW offline site zip ------------------------------------
+        extract_site_zip(course_dir)
 
         # -- Finalise --------------------------------------------------------
         completed = db.query(Asset).filter_by(course_id=course.id, status="completed").all()

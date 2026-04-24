@@ -15,11 +15,10 @@ app = FastAPI(title="MIT OCW Offline")
 TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
 # ---------------------------------------------------------------------------
-# Background download state
-# slug -> Task for individually-triggered downloads
-_active_downloads: dict[str, asyncio.Task] = {}
-# Single task that drives a bulk "download everything" run
-_bulk_task: asyncio.Task | None = None
+# Background task state
+_active_downloads: dict[str, asyncio.Task] = {}  # slug -> Task
+_bulk_task: asyncio.Task | None = None            # bulk course download
+_catalog_task: asyncio.Task | None = None         # catalog fetch
 # ---------------------------------------------------------------------------
 
 
@@ -108,8 +107,7 @@ async def index(request: Request, q: str = "", status: str = "", department: str
     departments = sorted({c.department for c in db.query(Course).all() if c.department})
     db.close()
 
-    return TEMPLATES.TemplateResponse("index.html", {
-        "request": request,
+    return TEMPLATES.TemplateResponse(request, "index.html", {
         "courses": courses,
         "total": total,
         "completed": completed,
@@ -160,21 +158,36 @@ async def catalog(
     departments = sorted({c.department for c in db.query(Course).all() if c.department})
     db.close()
 
-    global _bulk_task
-    bulk_running = _bulk_task is not None and not _bulk_task.done()
+    global _bulk_task, _catalog_task
+    bulk_running    = _bulk_task    is not None and not _bulk_task.done()
+    catalog_running = _catalog_task is not None and not _catalog_task.done()
 
-    return TEMPLATES.TemplateResponse("catalog.html", {
-        "request": request,
+    return TEMPLATES.TemplateResponse(request, "catalog.html", {
         "courses": courses,
         "counts": counts,
         "departments": departments,
         "running_slugs": _running_slugs(),
         "bulk_running": bulk_running,
+        "catalog_running": catalog_running,
         "q": q,
         "status_filter": status,
         "department_filter": department,
         "started": started,
     })
+
+
+# ---------------------------------------------------------------------------
+# Catalog fetch trigger
+# ---------------------------------------------------------------------------
+
+@app.post("/api/fetch-catalog")
+async def api_fetch_catalog(skip_metadata: bool = False):
+    global _catalog_task
+    if _catalog_task is not None and not _catalog_task.done():
+        return RedirectResponse("/catalog", status_code=303)
+    from downloader.catalog import fetch_catalog
+    _catalog_task = asyncio.create_task(fetch_catalog(skip_metadata=skip_metadata))
+    return RedirectResponse("/catalog", status_code=303)
 
 
 # ---------------------------------------------------------------------------
@@ -244,9 +257,18 @@ async def course_detail(request: Request, slug: str):
         if pages_dir.exists():
             section_pages = sorted(p for p in pages_dir.glob("*.html") if p.name != "index.html")
 
+    # Auto-extract the OCW offline site zip if it exists but hasn't been extracted yet.
+    site_url = None
+    if course.local_path and course.status == "completed":
+        from downloader.crawler import extract_site_zip
+        course_dir = Path(course.local_path)
+        if not (course_dir / "site" / "index.html").exists():
+            await asyncio.to_thread(extract_site_zip, course_dir)
+        if (course_dir / "site" / "index.html").exists():
+            site_url = f"/files/{slug}/site/index.html"
+
     db.close()
-    return TEMPLATES.TemplateResponse("course.html", {
-        "request": request,
+    return TEMPLATES.TemplateResponse(request, "course.html", {
         "course": course,
         "pdfs": pdfs,
         "videos": videos,
@@ -254,6 +276,7 @@ async def course_detail(request: Request, slug: str):
         "other": other,
         "section_pages": section_pages,
         "is_downloading": slug in _running_slugs(),
+        "site_url": site_url,
     })
 
 
