@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}{{ course.title or course.slug }} — MIT OCW Offline{% endblock %}
+{% block content %}
+
+<div class="back"><a href="/">← Back to catalog</a></div>
+
+<div class="course-header">
+  <h1>{{ course.title or course.slug }}</h1>
+  <div class="meta-chips">
+    {% if course.course_number %}<span>{{ course.course_number }}</span>{% endif %}
+    {% if course.department %}<span>{{ course.department }}</span>{% endif %}
+    {% if course.level %}<span>{{ course.level }}</span>{% endif %}
+    {% if course.term and course.year %}<span>{{ course.term }} {{ course.year }}</span>{% endif %}
+    <span class="badge badge-{{ course.status }}">{{ course.status }}</span>
+  </div>
+  {% if course.description %}
+  <div class="course-desc">{{ course.description }}</div>
+  {% endif %}
+  {% if course.status == 'completed' %}
+  <div class="course-stats">
+    {{ course.page_count or 0 }} pages &middot;
+    {{ course.asset_count or 0 }} files &middot;
+    {{ course.video_count or 0 }} videos
+    {% if course.total_size_bytes and course.total_size_bytes > 0 %}
+    &middot; {{ "%.2f"|format(course.total_size_bytes / 1073741824) }} GB
+    {% endif %}
+  </div>
+  {% endif %}
+  <div style="margin-top:0.75rem; font-size:0.8rem; color:#999;">
+    <a href="{{ course.url }}" target="_blank" rel="noopener">View on MIT OCW ↗</a>
+  </div>
+</div>
+
+{% if course.status != 'completed' %}
+<div class="empty">
+  <p>This course has not been downloaded yet.</p>
+  <p style="margin-top:0.6rem;">Run: <code>python cli.py download {{ course.slug }}</code></p>
+</div>
+{% else %}
+
+{# ---- Videos ---- #}
+{% if videos %}
+<div class="section-heading">Videos ({{ videos|length }})</div>
+<ul class="file-list">
+  {% for v in videos %}
+  <li>
+    {% if v.local_path %}
+    <a href="/video/{{ course.slug }}/{{ v.filename }}">🎬 {{ v.filename }}</a>
+    {% if v.size_bytes %}<span class="file-size">{{ "%.1f"|format(v.size_bytes / 1073741824) }} GB</span>{% endif %}
+    {% else %}
+    <a href="{{ v.url }}" target="_blank" rel="noopener">🔗 {{ v.url }}</a>
+    <span class="file-size">external</span>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{# ---- PDFs ---- #}
+{% if pdfs %}
+<div class="section-heading">PDFs &amp; Documents ({{ pdfs|length }})</div>
+<ul class="file-list">
+  {% for a in pdfs %}
+  <li>
+    <a href="/serve/{{ course.slug }}/pdf/{{ a.filename }}">📄 {{ a.filename }}</a>
+    {% if a.size_bytes %}<span class="file-size">{{ "%.1f"|format(a.size_bytes / 1048576) }} MB</span>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{# ---- Archives ---- #}
+{% if archives %}
+<div class="section-heading">Archives ({{ archives|length }})</div>
+<ul class="file-list">
+  {% for a in archives %}
+  <li>
+    <a href="/serve/{{ course.slug }}/archive/{{ a.filename }}">🗜 {{ a.filename }}</a>
+    {% if a.size_bytes %}<span class="file-size">{{ "%.1f"|format(a.size_bytes / 1048576) }} MB</span>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{# ---- Course pages ---- #}
+{% if section_pages %}
+<div class="section-heading">Course Pages</div>
+<ul class="file-list">
+  {% for page in section_pages %}
+  <li>
+    <a href="/page/{{ course.slug }}/{{ page.stem }}">📃 {{ page.stem | replace("-", " ") | replace("_", " ") | title }}</a>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{# ---- Other ---- #}
+{% if other %}
+<div class="section-heading">Other Files ({{ other|length }})</div>
+<ul class="file-list">
+  {% for a in other %}
+  <li>
+    <a href="/serve/{{ course.slug }}/{{ a.asset_type }}/{{ a.filename }}">{{ a.filename }}</a>
+    {% if a.size_bytes %}<span class="file-size">{{ "%.1f"|format(a.size_bytes / 1048576) }} MB</span>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if not videos and not pdfs and not archives and not section_pages and not other %}
+<div class="empty"><p>No assets were found for this course.</p></div>
+{% endif %}
+
+{% endif %} {# end status == completed #}
+
+{% endblock %}

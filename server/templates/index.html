@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}MIT OCW Offline — Browse Courses{% endblock %}
+{% block content %}
+
+<div class="stats">
+  <div class="stat"><div class="num">{{ total }}</div><div class="lbl">Total</div></div>
+  <div class="stat"><div class="num">{{ completed }}</div><div class="lbl">Downloaded</div></div>
+  <div class="stat"><div class="num">{{ pending }}</div><div class="lbl">Pending</div></div>
+  <div class="stat"><div class="num">{{ total - completed - pending }}</div><div class="lbl">Other</div></div>
+</div>
+
+<form class="search-bar" method="get" action="/">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search title, department, course number…">
+  <select name="status">
+    <option value="">All statuses</option>
+    <option value="completed"   {% if status_filter == 'completed'   %}selected{% endif %}>Downloaded</option>
+    <option value="pending"     {% if status_filter == 'pending'     %}selected{% endif %}>Pending</option>
+    <option value="downloading" {% if status_filter == 'downloading' %}selected{% endif %}>Downloading</option>
+    <option value="failed"      {% if status_filter == 'failed'      %}selected{% endif %}>Failed</option>
+  </select>
+  <select name="department">
+    <option value="">All departments</option>
+    {% for dept in departments %}
+    <option value="{{ dept }}" {% if department_filter == dept %}selected{% endif %}>{{ dept }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Search</button>
+  {% if q or status_filter or department_filter %}
+  <a href="/" style="align-self:center; font-size:0.85rem; margin-left:0.25rem;">Clear</a>
+  {% endif %}
+</form>
+
+{% if courses %}
+<div class="card-grid">
+  {% for course in courses %}
+  <div class="card">
+    <div class="card-title"><a href="/course/{{ course.slug }}">{{ course.title or course.slug }}</a></div>
+    <div class="card-meta">
+      {% if course.course_number %}{{ course.course_number }} &middot; {% endif %}
+      {% if course.department %}{{ course.department }}{% endif %}
+      {% if course.term and course.year %} &middot; {{ course.term }} {{ course.year }}{% endif %}
+    </div>
+    {% if course.description %}
+    <div class="card-desc">{{ course.description }}</div>
+    {% endif %}
+    <span class="badge badge-{{ course.status }}">{{ course.status }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">
+  {% if q or status_filter or department_filter %}
+  <p>No courses match your filters.</p>
+  {% else %}
+  <p>No courses in the catalog yet.</p>
+  <p style="margin-top:0.75rem;">Run: <code>python cli.py fetch-catalog</code></p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

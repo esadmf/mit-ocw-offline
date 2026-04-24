@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+storage/
+ocw.db
+*.log
+
+# Local environment — never commit real paths or secrets
+.env

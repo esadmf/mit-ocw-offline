@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}MIT OCW Offline{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 15px; line-height: 1.5; color: #1a1a1a; background: #f5f5f5;
+    }
+    a { color: #8a1500; }
+
+    /* Header */
+    header {
+      background: #8a1500; color: #fff; padding: 0.85rem 0;
+      border-bottom: 3px solid #5c0d00;
+    }
+    .header-inner {
+      max-width: 1200px; margin: 0 auto; padding: 0 1.5rem;
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;
+    }
+    header h1 { font-size: 1.25rem; font-weight: 700; }
+    header h1 a { color: #fff; text-decoration: none; }
+    header p { font-size: 0.78rem; opacity: 0.8; margin-top: 0.1rem; }
+    header nav a {
+      color: rgba(255,255,255,.85); text-decoration: none;
+      margin-left: 1.25rem; font-size: 0.85rem;
+    }
+    header nav a:hover { color: #fff; }
+
+    /* Layout */
+    main { max-width: 1200px; margin: 2rem auto; padding: 0 1.5rem; }
+
+    /* Stats row */
+    .stats { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+    .stat { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 0.9rem 1.4rem; text-align: center; min-width: 120px; }
+    .stat .num { font-size: 1.75rem; font-weight: 700; color: #8a1500; }
+    .stat .lbl { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .05em; color: #777; margin-top: 0.1rem; }
+
+    /* Search bar */
+    .search-bar { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+    .search-bar input[type=text] {
+      flex: 1; min-width: 200px; padding: 0.45rem 0.75rem;
+      border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem;
+    }
+    .search-bar select {
+      padding: 0.45rem 0.6rem; border: 1px solid #ccc;
+      border-radius: 4px; font-size: 0.85rem; background: #fff;
+    }
+    .search-bar button {
+      background: #8a1500; color: #fff; border: none;
+      padding: 0.45rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem;
+    }
+    .search-bar button:hover { background: #6e1100; }
+
+    /* Course card grid */
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 1rem; }
+    .card {
+      background: #fff; border: 1px solid #ddd; border-radius: 6px;
+      padding: 1.1rem 1.2rem; display: flex; flex-direction: column;
+      transition: box-shadow .15s;
+    }
+    .card:hover { box-shadow: 0 2px 10px rgba(0,0,0,.1); }
+    .card-title { font-size: 0.92rem; font-weight: 600; margin-bottom: 0.3rem; }
+    .card-title a { text-decoration: none; color: #8a1500; }
+    .card-title a:hover { text-decoration: underline; }
+    .card-meta { font-size: 0.76rem; color: #666; margin-bottom: 0.5rem; }
+    .card-desc {
+      font-size: 0.8rem; color: #444; line-height: 1.45; flex: 1;
+      overflow: hidden; display: -webkit-box;
+      -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-block; font-size: 0.68rem; font-weight: 600;
+      padding: 0.15rem 0.55rem; border-radius: 12px; margin-top: 0.6rem;
+    }
+    .badge-completed  { background: #d4edda; color: #155724; }
+    .badge-pending    { background: #fff3cd; color: #856404; }
+    .badge-downloading{ background: #cce5ff; color: #004085; }
+    .badge-failed     { background: #f8d7da; color: #721c24; }
+
+    /* Course detail */
+    .back { margin-bottom: 1.25rem; font-size: 0.88rem; }
+    .back a { text-decoration: none; }
+    .back a:hover { text-decoration: underline; }
+
+    .course-header {
+      background: #fff; border: 1px solid #ddd; border-radius: 6px;
+      padding: 1.4rem; margin-bottom: 1.5rem;
+    }
+    .course-header h1 { font-size: 1.4rem; color: #8a1500; margin-bottom: 0.5rem; }
+    .meta-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
+    .meta-chips span {
+      background: #f0f0f0; border-radius: 4px;
+      padding: 0.18rem 0.55rem; font-size: 0.78rem; color: #555;
+    }
+    .course-desc { font-size: 0.88rem; color: #444; line-height: 1.6; margin-top: 0.6rem; }
+    .course-stats { font-size: 0.78rem; color: #888; margin-top: 0.6rem; }
+
+    /* Section blocks */
+    .section-heading {
+      font-size: 1rem; font-weight: 600; color: #333;
+      margin: 1.5rem 0 0.6rem; padding-bottom: 0.25rem;
+      border-bottom: 2px solid #8a1500;
+    }
+    .file-list { list-style: none; }
+    .file-list li { padding: 0.38rem 0; border-bottom: 1px solid #eee; font-size: 0.88rem; display: flex; align-items: center; gap: 0.4rem; }
+    .file-list li:last-child { border-bottom: none; }
+    .file-list a { text-decoration: none; }
+    .file-list a:hover { text-decoration: underline; }
+    .file-size { font-size: 0.75rem; color: #999; margin-left: auto; flex-shrink: 0; }
+
+    /* Empty state */
+    .empty { text-align: center; padding: 3rem 1rem; color: #999; }
+    .empty code { background: #f0f0f0; padding: 0.2rem 0.5rem; border-radius: 3px; font-size: 0.85rem; color: #333; }
+
+    /* Footer */
+    footer {
+      text-align: center; font-size: 0.75rem; color: #aaa;
+      border-top: 1px solid #ddd; padding: 1.25rem;
+      margin-top: 2.5rem;
+    }
+    footer a { color: #aaa; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <div>
+      <h1><a href="/">MIT OpenCourseWare — Offline Archive</a></h1>
+      <p>Personal offline library</p>
+    </div>
+    <nav>
+      <a href="/">All</a>
+      <a href="/?status=completed">Downloaded</a>
+      <a href="/?status=pending">Pending</a>
+    </nav>
+  </div>
+</header>
+<main>
+  {% block content %}{% endblock %}
+</main>
+<footer>
+  MIT OpenCourseWare content is licensed under
+  <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a>.
+  For personal offline use only.
+</footer>
+</body>
+</html>

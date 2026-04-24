@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+
+# Runtime data (kept on the volume, not baked into the image)
+storage/
+ocw.db
+*.log
+
+# Git
+.git/
+.gitignore

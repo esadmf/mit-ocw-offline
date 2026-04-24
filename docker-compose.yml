@@ -1,0 +1,32 @@
+services:
+  server:
+    build: .
+    ports:
+      - "${OCW_PORT:-8080}:8080"
+    volumes:
+      - ${DATA_PATH:-./data}:/data
+    environment:
+      OCW_DATA_DIR: /data
+      OCW_REQUEST_DELAY: ${OCW_REQUEST_DELAY:-1.0}
+      OCW_CONCURRENT: ${OCW_CONCURRENT:-3}
+      OCW_DOWNLOAD_VIDEOS: ${OCW_DOWNLOAD_VIDEOS:-true}
+      OCW_MAX_FILE_MB: ${OCW_MAX_FILE_MB:-5000}
+    restart: unless-stopped
+
+  # One-off worker — used for fetch-catalog / download / download-all.
+  # Not started by default; invoke with:
+  #   docker compose run --rm worker fetch-catalog
+  #   docker compose run --rm worker download <slug>
+  #   docker compose run --rm worker download-all --workers 2
+  worker:
+    build: .
+    volumes:
+      - ${DATA_PATH:-./data}:/data
+    environment:
+      OCW_DATA_DIR: /data
+      OCW_REQUEST_DELAY: ${OCW_REQUEST_DELAY:-1.0}
+      OCW_CONCURRENT: ${OCW_CONCURRENT:-3}
+      OCW_DOWNLOAD_VIDEOS: ${OCW_DOWNLOAD_VIDEOS:-true}
+      OCW_MAX_FILE_MB: ${OCW_MAX_FILE_MB:-5000}
+    profiles:
+      - worker
