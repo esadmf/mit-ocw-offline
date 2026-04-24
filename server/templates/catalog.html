@@ -7,7 +7,7 @@
   <div class="stat"><div class="num">{{ counts.total }}</div><div class="lbl">Total</div></div>
   <div class="stat"><div class="num">{{ counts.completed }}</div><div class="lbl">Downloaded</div></div>
   <div class="stat"><div class="num">{{ counts.downloading }}</div><div class="lbl">Downloading</div></div>
-  <div class="stat"><div class="num">{{ counts.pending }}</div><div class="lbl">Pending</div></div>
+  <div class="stat"><div class="num">{{ counts.available }}</div><div class="lbl">Available</div></div>
   <div class="stat"><div class="num">{{ counts.failed }}</div><div class="lbl">Failed</div></div>
 </div>
 
@@ -55,11 +55,11 @@
   <div class="spacer"></div>
 
   {# Download actions — only shown once catalog has courses #}
-  {% if counts.pending > 0 %}
+  {% if counts.available > 0 %}
   <form method="post" action="/api/download-all">
     <button type="submit" class="btn btn-primary"
-      onclick="return confirm('Start downloading all {{ counts.pending }} pending courses?\n\nThis will run in the background and may take a very long time.')">
-      Download All Pending ({{ counts.pending }})
+      onclick="return confirm('Start downloading all {{ counts.available }} available courses?\n\nThis will run in the background and may take a very long time.')">
+      Download All ({{ counts.available }})
     </button>
   </form>
   {% endif %}
@@ -80,7 +80,7 @@
   <input type="text" name="q" value="{{ q }}" placeholder="Search title, department, course number…">
   <select name="status">
     <option value="">All statuses</option>
-    <option value="pending"     {% if status_filter == 'pending'     %}selected{% endif %}>Pending</option>
+    <option value="available"   {% if status_filter == 'available'   %}selected{% endif %}>Available</option>
     <option value="downloading" {% if status_filter == 'downloading' %}selected{% endif %}>Downloading</option>
     <option value="completed"   {% if status_filter == 'completed'   %}selected{% endif %}>Downloaded</option>
     <option value="failed"      {% if status_filter == 'failed'      %}selected{% endif %}>Failed</option>

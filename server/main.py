@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import text
+from sqlalchemy import case, text
 
 import config
 from db import SessionLocal, init_db
@@ -43,12 +43,16 @@ async def _bulk_download(statuses: list[str]):
 def _startup():
     config.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
     init_db()
-    # Anything left as "downloading" from a previous run never finished — reset it.
     db = SessionLocal()
+    # Migrate: old "pending" (catalog-only, never requested) → "available".
+    migrated = db.query(Course).filter_by(status="pending").all()
+    for c in migrated:
+        c.status = "available"
+    # Anything left as "downloading" from a previous run never finished — reset it.
     stuck = db.query(Course).filter_by(status="downloading").all()
     for c in stuck:
-        c.status = "pending"
-    if stuck:
+        c.status = "available"
+    if migrated or stuck:
         db.commit()
     db.close()
     if not any(r.path == "/files" for r in app.routes):
@@ -100,10 +104,16 @@ async def index(request: Request, q: str = "", status: str = "", department: str
     if department:
         query = query.filter(Course.department.ilike(f"%{department}%"))
 
-    courses = query.order_by(Course.title).all()
+    status_order = case(
+        (Course.status == "completed",   0),
+        (Course.status == "downloading", 1),
+        (Course.status == "failed",      2),
+        else_=3,
+    )
+    courses = query.order_by(status_order, Course.title).all()
     total = db.query(Course).count()
-    completed = db.query(Course).filter_by(status="completed").count()
-    pending = db.query(Course).filter_by(status="pending").count()
+    completed  = db.query(Course).filter_by(status="completed").count()
+    available  = db.query(Course).filter_by(status="available").count()
     departments = sorted({c.department for c in db.query(Course).all() if c.department})
     db.close()
 
@@ -111,7 +121,7 @@ async def index(request: Request, q: str = "", status: str = "", department: str
         "courses": courses,
         "total": total,
         "completed": completed,
-        "pending": pending,
+        "available": available,
         "departments": departments,
         "q": q,
         "status_filter": status,
@@ -150,7 +160,7 @@ async def catalog(
 
     counts = {
         "total":       db.query(Course).count(),
-        "pending":     db.query(Course).filter_by(status="pending").count(),
+        "available":   db.query(Course).filter_by(status="available").count(),
         "downloading": db.query(Course).filter_by(status="downloading").count(),
         "completed":   db.query(Course).filter_by(status="completed").count(),
         "failed":      db.query(Course).filter_by(status="failed").count(),
@@ -223,7 +233,7 @@ async def api_download_all(include_failed: bool = False):
     if _bulk_task is not None and not _bulk_task.done():
         return RedirectResponse("/catalog?started=0", status_code=303)
 
-    statuses = ["pending", "failed"] if include_failed else ["pending"]
+    statuses = ["available", "failed"] if include_failed else ["available"]
 
     db = SessionLocal()
     count = db.query(Course).filter(Course.status.in_(statuses)).count()

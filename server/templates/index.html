@@ -5,8 +5,7 @@
 <div class="stats">
   <div class="stat"><div class="num">{{ total }}</div><div class="lbl">Total</div></div>
   <div class="stat"><div class="num">{{ completed }}</div><div class="lbl">Downloaded</div></div>
-  <div class="stat"><div class="num">{{ pending }}</div><div class="lbl">Pending</div></div>
-  <div class="stat"><div class="num">{{ total - completed - pending }}</div><div class="lbl">Other</div></div>
+  <div class="stat"><div class="num">{{ available }}</div><div class="lbl">Available</div></div>
 </div>
 
 <form class="search-bar" method="get" action="/">
@@ -14,9 +13,9 @@
   <select name="status">
     <option value="">All statuses</option>
     <option value="completed"   {% if status_filter == 'completed'   %}selected{% endif %}>Downloaded</option>
-    <option value="pending"     {% if status_filter == 'pending'     %}selected{% endif %}>Pending</option>
     <option value="downloading" {% if status_filter == 'downloading' %}selected{% endif %}>Downloading</option>
     <option value="failed"      {% if status_filter == 'failed'      %}selected{% endif %}>Failed</option>
+    <option value="available"   {% if status_filter == 'available'   %}selected{% endif %}>Available</option>
   </select>
   <select name="department">
     <option value="">All departments</option>
@@ -52,8 +51,7 @@
   {% if q or status_filter or department_filter %}
   <p>No courses match your filters.</p>
   {% else %}
-  <p>No courses in the catalog yet.</p>
-  <p style="margin-top:0.75rem;">Run: <code>python cli.py fetch-catalog</code></p>
+  <p>No courses in the catalog yet. Visit the <a href="/catalog">Catalog</a> to fetch course listings.</p>
   {% endif %}
 </div>
 {% endif %}

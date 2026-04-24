@@ -24,8 +24,8 @@ class Course(Base):
     topics = Column(Text)             # JSON-encoded list
     image_url = Column(String(1000))
 
-    # pending | downloading | completed | failed
-    status = Column(String(20), default="pending", index=True)
+    # available | downloading | completed | failed
+    status = Column(String(20), default="available", index=True)
     download_started_at = Column(DateTime)
     download_completed_at = Column(DateTime)
     download_error = Column(Text)
