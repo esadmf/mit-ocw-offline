@@ -121,6 +121,95 @@ def _asset_links(soup: BeautifulSoup, page_url: str) -> list[tuple[str, str]]:
 
 
 # ---------------------------------------------------------------------------
+# YouTube → local video patching
+# ---------------------------------------------------------------------------
+
+# Matches <iframe src="...youtube.com/embed/VIDEO_ID...">...</iframe>
+_YT_EMBED_RE = re.compile(
+    r'<iframe[^>]+src=["\'](?:https?:)?//(?:www\.)?youtube(?:-nocookie)?\.com/embed/'
+    r'([a-zA-Z0-9_-]{11})[^"\']*["\'][^>]*>\s*(?:</iframe>)?',
+    re.IGNORECASE,
+)
+# Matches href="...youtube.com/watch?v=VIDEO_ID..." or href="...youtu.be/VIDEO_ID..."
+_YT_LINK_RE = re.compile(
+    r'href=["\']https?://(?:www\.)?(?:youtube\.com/watch\?(?:[^"\'&]*&)*v=|youtu\.be/)'
+    r'([a-zA-Z0-9_-]{11})[^"\']*["\']',
+    re.IGNORECASE,
+)
+
+
+def _patch_site_html(course_dir: Path, slug: str, course_id: int, db) -> int:
+    """Replace YouTube iframes/links in site/ HTML files with local video references."""
+    from db.models import Asset
+
+    video_assets = (
+        db.query(Asset)
+        .filter_by(course_id=course_id, asset_type="video", status="completed")
+        .filter(Asset.filename.isnot(None))
+        .all()
+    )
+    id_to_file: dict[str, str] = {}
+    for a in video_assets:
+        if a.url:
+            m = re.search(r"[?&]v=([a-zA-Z0-9_-]{11})", a.url)
+            if m:
+                id_to_file[m.group(1)] = a.filename
+
+    if not id_to_file:
+        return 0
+
+    site_dir = course_dir / "site"
+    if not site_dir.exists():
+        return 0
+
+    patched = 0
+    for html_path in site_dir.rglob("*.html"):
+        try:
+            content = html_path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+
+        changed = False
+
+        def replace_iframe(m, _changed=None):
+            nonlocal changed
+            vid_id = m.group(1)
+            if vid_id not in id_to_file:
+                return m.group(0)
+            changed = True
+            filename = id_to_file[vid_id]
+            full = m.group(0)
+            w_m = re.search(r'width=["\']([^"\']+)["\']', full)
+            h_m = re.search(r'height=["\']([^"\']+)["\']', full)
+            w = w_m.group(1) if w_m else "100%"
+            h = f' height="{h_m.group(1)}"' if h_m else ""
+            return (
+                f'<video controls width="{w}"{h} style="max-width:100%;display:block">'
+                f'<source src="/video/{slug}/{filename}" type="video/mp4">'
+                f'<a href="https://www.youtube.com/watch?v={vid_id}"'
+                f' target="_blank" rel="noopener">Watch on YouTube</a>'
+                f'</video>'
+            )
+
+        def replace_link(m):
+            nonlocal changed
+            vid_id = m.group(1)
+            if vid_id not in id_to_file:
+                return m.group(0)
+            changed = True
+            return f'href="/video/{slug}/{id_to_file[vid_id]}"'
+
+        content = _YT_EMBED_RE.sub(replace_iframe, content)
+        content = _YT_LINK_RE.sub(replace_link, content)
+
+        if changed:
+            html_path.write_text(content, encoding="utf-8")
+            patched += 1
+
+    return patched
+
+
+# ---------------------------------------------------------------------------
 # OCW site zip extraction
 # ---------------------------------------------------------------------------
 
@@ -339,6 +428,12 @@ async def download_course(slug: str):
         # -- Extract OCW offline site zip ------------------------------------
         extract_site_zip(course_dir)
 
+        # -- Patch site HTML: replace YouTube embeds with local video files --
+        if config.DOWNLOAD_VIDEOS and (course_dir / "site").exists():
+            n = await asyncio.to_thread(_patch_site_html, course_dir, slug, course.id, db)
+            if n:
+                console.print(f"  Patched {n} HTML file{'s' if n != 1 else ''} with local video links")
+
         # -- Finalise --------------------------------------------------------
         completed = db.query(Asset).filter_by(course_id=course.id, status="completed").all()
         course.status = "completed"
@@ -355,4 +450,90 @@ async def download_course(slug: str):
         f"{course.page_count} pages, {course.asset_count} files, "
         f"{course.video_count} videos, {size_gb:.2f} GB"
     )
+    db.close()
+
+
+async def fetch_course_videos(slug: str):
+    """Download missing YouTube videos for an already-completed course.
+
+    Scans previously saved pages (no OCW network requests), downloads any
+    videos not yet on disk, then patches the extracted site HTML.
+    """
+    db = SessionLocal()
+    course = db.query(Course).filter_by(slug=slug).first()
+
+    if not course or course.status != "completed" or not course.local_path:
+        db.close()
+        return
+
+    course_dir = Path(course.local_path)
+    console.print(f"\n[bold cyan]▶ Fetching videos: {course.title or slug}[/bold cyan]")
+
+    # Scan saved pages for YouTube IDs — no network requests needed.
+    youtube_ids: list[str] = []
+    pages_dir = course_dir / "pages"
+    if pages_dir.exists():
+        for p in pages_dir.glob("*.html"):
+            try:
+                youtube_ids.extend(_youtube_ids(p.read_text(encoding="utf-8", errors="replace")))
+            except Exception:
+                pass
+
+    # Also scan site/ pages in case the zip has additional embeds.
+    site_dir = course_dir / "site"
+    if site_dir.exists():
+        for p in site_dir.rglob("*.html"):
+            try:
+                youtube_ids.extend(_youtube_ids(p.read_text(encoding="utf-8", errors="replace")))
+            except Exception:
+                pass
+
+    unique_yt = list(dict.fromkeys(youtube_ids))
+
+    if not unique_yt:
+        console.print(f"  [yellow]No YouTube videos found in saved pages.[/yellow]")
+        db.close()
+        return
+
+    console.print(f"  Found {len(unique_yt)} YouTube video(s)")
+
+    # Register any not yet in the DB.
+    for vid_id in unique_yt:
+        yt_url = f"https://www.youtube.com/watch?v={vid_id}"
+        if not db.query(Asset).filter_by(course_id=course.id, url=yt_url).first():
+            db.add(Asset(course_id=course.id, url=yt_url, asset_type="video", status="available"))
+    db.commit()
+
+    # Download only the ones not yet on disk.
+    to_download = [
+        re.search(r"[?&]v=([a-zA-Z0-9_-]{11})", a.url).group(1)
+        for a in db.query(Asset)
+        .filter_by(course_id=course.id, asset_type="video")
+        .filter(Asset.status.in_(["available", "pending", "failed"]))
+        .all()
+        if a.url and re.search(r"[?&]v=([a-zA-Z0-9_-]{11})", a.url)
+    ]
+
+    if to_download:
+        from downloader.video import download_youtube_videos
+        videos_dir = course_dir / "videos"
+        videos_dir.mkdir(exist_ok=True)
+        await download_youtube_videos(course.id, to_download, videos_dir, db)
+    else:
+        console.print("  All videos already downloaded.")
+
+    # Ensure the site zip is extracted, then patch HTML.
+    extract_site_zip(course_dir)
+    n = await asyncio.to_thread(_patch_site_html, course_dir, slug, course.id, db)
+    if n:
+        console.print(f"  Patched {n} HTML file{'s' if n != 1 else ''} with local video links")
+
+    # Update course video count.
+    completed_vids = db.query(Asset).filter_by(
+        course_id=course.id, asset_type="video", status="completed"
+    ).count()
+    course.video_count = completed_vids
+    db.commit()
+
+    console.print(f"  [green]✓ Videos done — {completed_vids} downloaded[/green]")
     db.close()

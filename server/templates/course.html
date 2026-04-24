@@ -39,13 +39,48 @@
 
 {# ---- Primary: offline site ---- #}
 {% if site_url %}
-<div style="background:#fff; border:1px solid #ddd; border-radius:6px; padding:1.25rem 1.4rem; margin-bottom:1.5rem; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
+<div style="background:#fff; border:1px solid #ddd; border-radius:6px; padding:1.25rem 1.4rem; margin-bottom:1rem; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
   <div>
     <div style="font-weight:600; font-size:0.95rem; color:#333;">Offline Course Site</div>
     <div style="font-size:0.8rem; color:#777; margin-top:0.2rem;">Full site — identical to ocw.mit.edu, works completely offline</div>
   </div>
   <a href="{{ site_url }}" class="btn btn-primary" target="_blank" style="font-size:0.9rem; padding:0.5rem 1.25rem; white-space:nowrap;">Open Course ↗</a>
 </div>
+{% endif %}
+
+{# ---- Video download action ---- #}
+<div style="background:#fff; border:1px solid #ddd; border-radius:6px; padding:1rem 1.4rem; margin-bottom:1.5rem; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
+  <div>
+    <div style="font-weight:600; font-size:0.88rem; color:#333;">
+      YouTube Videos
+      {% if course.video_count and course.video_count > 0 %}
+        <span style="font-weight:400; color:#555;">&mdash; {{ course.video_count }} downloaded</span>
+      {% endif %}
+    </div>
+    <div style="font-size:0.78rem; color:#777; margin-top:0.15rem;">
+      {% if video_running %}
+        Downloading videos — page will refresh automatically
+      {% elif course.video_count and course.video_count > 0 %}
+        Videos have been downloaded and embedded in the offline site
+      {% else %}
+        Scan saved pages for YouTube links and download locally
+      {% endif %}
+    </div>
+  </div>
+  {% if video_running %}
+    <button class="btn btn-sm btn-secondary" disabled>Downloading…</button>
+  {% else %}
+    <form method="post" action="/api/download-videos/{{ course.slug }}">
+      <button type="submit" class="btn btn-sm btn-secondary">
+        {% if course.video_count and course.video_count > 0 %}Re-download Videos{% else %}Download Videos{% endif %}
+      </button>
+    </form>
+  {% endif %}
+</div>
+
+{# ---- Auto-refresh while video download is running ---- #}
+{% if video_running %}
+<script>setTimeout(() => location.reload(), 10000);</script>
 {% endif %}
 
 {# ---- Videos ---- #}

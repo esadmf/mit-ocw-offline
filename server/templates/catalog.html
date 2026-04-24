@@ -28,7 +28,13 @@
 
 {% if bulk_running %}
 <div class="banner banner-info">
-  Bulk download is running in the background. The page will refresh every 15 seconds.
+  Bulk download is running in the background. The page will refresh automatically.
+</div>
+{% endif %}
+
+{% if bulk_video_running %}
+<div class="banner banner-info">
+  Downloading missing videos across all courses — this may take a while. The page will refresh automatically.
 </div>
 {% endif %}
 
@@ -71,6 +77,19 @@
       Retry All Failed ({{ counts.failed }})
     </button>
   </form>
+  {% endif %}
+
+  {% if counts.completed > 0 %}
+  {% if bulk_video_running %}
+    <button class="btn btn-secondary" disabled>Downloading Videos…</button>
+  {% else %}
+  <form method="post" action="/api/download-all-videos">
+    <button type="submit" class="btn btn-secondary"
+      onclick="return confirm('Scan all {{ counts.completed }} downloaded courses for missing YouTube videos and download them?\n\nThis runs in the background and may take a long time.')">
+      Download Missing Videos ({{ counts.completed }})
+    </button>
+  </form>
+  {% endif %}
   {% endif %}
 
 </div>
@@ -185,7 +204,7 @@
 
 {# ---- Auto-refresh while downloads are active ---- #}
 <script>
-  if ({{ 'true' if (counts.downloading > 0 or running_slugs or bulk_running or catalog_running) else 'false' }}) {
+  if ({{ 'true' if (counts.downloading > 0 or running_slugs or bulk_running or bulk_video_running or catalog_running) else 'false' }}) {
     setTimeout(() => location.reload(), 10000);
   }
 </script>

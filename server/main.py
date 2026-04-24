@@ -17,7 +17,9 @@ TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / "templates")
 # ---------------------------------------------------------------------------
 # Background task state
 _active_downloads: dict[str, asyncio.Task] = {}  # slug -> Task
+_video_tasks: dict[str, asyncio.Task] = {}        # slug -> video-fetch Task
 _bulk_task: asyncio.Task | None = None            # bulk course download
+_bulk_video_task: asyncio.Task | None = None      # bulk video fetch across all courses
 _catalog_task: asyncio.Task | None = None         # catalog fetch
 # ---------------------------------------------------------------------------
 
@@ -37,6 +39,16 @@ async def _bulk_download(statuses: list[str]):
         async with sem:
             await download_course(slug)
     await asyncio.gather(*[guarded(s) for s in slugs])
+
+
+async def _bulk_fetch_videos():
+    """Scan all completed courses for missing YouTube videos and download them."""
+    from downloader.crawler import fetch_course_videos
+    db = SessionLocal()
+    slugs = [c.slug for c in db.query(Course).filter_by(status="completed").all()]
+    db.close()
+    for slug in slugs:
+        await fetch_course_videos(slug)
 
 
 @app.on_event("startup")
@@ -156,11 +168,12 @@ async def index(
         r[0] for r in db.query(distinct(Course.level))
         .filter(Course.level.isnot(None)).all()
     )
-    global _bulk_task, _catalog_task
+    global _bulk_task, _bulk_video_task, _catalog_task
     any_active = (
         bool(_running_slugs())
-        or (_bulk_task    is not None and not _bulk_task.done())
-        or (_catalog_task is not None and not _catalog_task.done())
+        or (_bulk_task       is not None and not _bulk_task.done())
+        or (_bulk_video_task is not None and not _bulk_video_task.done())
+        or (_catalog_task    is not None and not _catalog_task.done())
         or db.query(Course).filter_by(status="downloading").count() > 0
     )
     db.close()
@@ -223,9 +236,10 @@ async def catalog(
     departments = sorted({c.department for c in db.query(Course).all() if c.department})
     db.close()
 
-    global _bulk_task, _catalog_task
-    bulk_running    = _bulk_task    is not None and not _bulk_task.done()
-    catalog_running = _catalog_task is not None and not _catalog_task.done()
+    global _bulk_task, _bulk_video_task, _catalog_task
+    bulk_running       = _bulk_task       is not None and not _bulk_task.done()
+    bulk_video_running = _bulk_video_task is not None and not _bulk_video_task.done()
+    catalog_running    = _catalog_task    is not None and not _catalog_task.done()
 
     return TEMPLATES.TemplateResponse(request, "catalog.html", {
         "courses": courses,
@@ -233,6 +247,7 @@ async def catalog(
         "departments": departments,
         "running_slugs": _running_slugs(),
         "bulk_running": bulk_running,
+        "bulk_video_running": bulk_video_running,
         "catalog_running": catalog_running,
         "q": q,
         "status_filter": status,
@@ -281,6 +296,24 @@ async def api_download_one(slug: str, request: Request):
     return RedirectResponse(referer, status_code=303)
 
 
+@app.post("/api/download-videos/{slug}")
+async def api_download_videos(slug: str):
+    global _video_tasks
+    db = SessionLocal()
+    course = db.query(Course).filter_by(slug=slug).first()
+    db.close()
+
+    if not course or course.status != "completed":
+        return JSONResponse({"error": "course not found or not downloaded"}, status_code=404)
+
+    if slug in _video_tasks and not _video_tasks[slug].done():
+        return RedirectResponse(f"/course/{slug}", status_code=303)
+
+    from downloader.crawler import fetch_course_videos
+    _video_tasks[slug] = asyncio.create_task(fetch_course_videos(slug))
+    return RedirectResponse(f"/course/{slug}", status_code=303)
+
+
 @app.post("/api/download-all")
 async def api_download_all(include_failed: bool = False):
     global _bulk_task
@@ -296,6 +329,15 @@ async def api_download_all(include_failed: bool = False):
 
     _bulk_task = asyncio.create_task(_bulk_download(statuses))
     return RedirectResponse(f"/catalog?started={count}", status_code=303)
+
+
+@app.post("/api/download-all-videos")
+async def api_download_all_videos():
+    global _bulk_video_task
+    if _bulk_video_task is not None and not _bulk_video_task.done():
+        return RedirectResponse("/catalog", status_code=303)
+    _bulk_video_task = asyncio.create_task(_bulk_fetch_videos())
+    return RedirectResponse("/catalog", status_code=303)
 
 
 # ---------------------------------------------------------------------------
@@ -332,6 +374,9 @@ async def course_detail(request: Request, slug: str):
         if (course_dir / "site" / "index.html").exists():
             site_url = f"/files/{slug}/site/index.html"
 
+    global _video_tasks
+    video_running = slug in _video_tasks and not _video_tasks[slug].done()
+
     db.close()
     return TEMPLATES.TemplateResponse(request, "course.html", {
         "course": course,
@@ -342,6 +387,7 @@ async def course_detail(request: Request, slug: str):
         "section_pages": section_pages,
         "is_downloading": slug in _running_slugs(),
         "site_url": site_url,
+        "video_running": video_running,
     })
 
 
