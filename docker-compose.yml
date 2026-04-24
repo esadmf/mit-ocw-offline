@@ -1,4 +1,19 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ocw}
+      POSTGRES_USER: ${POSTGRES_USER:-ocw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ocw} -d ${POSTGRES_DB:-ocw}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   server:
     build: .
     ports:
@@ -11,6 +26,20 @@ services:
       OCW_CONCURRENT: ${OCW_CONCURRENT:-3}
       OCW_DOWNLOAD_VIDEOS: ${OCW_DOWNLOAD_VIDEOS:-true}
       OCW_MAX_FILE_MB: ${OCW_MAX_FILE_MB:-5000}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-ocw}
+      POSTGRES_USER: ${POSTGRES_USER:-ocw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
   # One-off worker — used for fetch-catalog / download / download-all.
@@ -28,5 +57,16 @@ services:
       OCW_CONCURRENT: ${OCW_CONCURRENT:-3}
       OCW_DOWNLOAD_VIDEOS: ${OCW_DOWNLOAD_VIDEOS:-true}
       OCW_MAX_FILE_MB: ${OCW_MAX_FILE_MB:-5000}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-ocw}
+      POSTGRES_USER: ${POSTGRES_USER:-ocw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
     profiles:
       - worker
+
+volumes:
+  postgres-data:

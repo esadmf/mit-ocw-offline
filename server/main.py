@@ -1,9 +1,10 @@
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import text
 
 import config
 from db import SessionLocal, init_db
@@ -20,6 +21,39 @@ def _startup():
     # Mount the storage directory so templates can reference /files/...
     if not any(r.path == "/files" for r in app.routes):
         app.mount("/files", StaticFiles(directory=str(config.STORAGE_DIR)), name="files")
+
+
+# ---------------------------------------------------------------------------
+# Health check
+# ---------------------------------------------------------------------------
+
+@app.get("/health")
+def health():
+    """
+    Returns 200 + JSON when the service is fully operational.
+    Returns 503 if the database is unreachable.
+    Designed to be polled by external monitoring / dashboard tools.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1"))
+        course_count = db.query(Course).count()
+        completed_count = db.query(Course).filter_by(status="completed").count()
+        storage_ok = config.STORAGE_DIR.exists()
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "courses_in_catalog": course_count,
+            "courses_downloaded": completed_count,
+            "storage_mounted": storage_ok,
+        }
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "database": str(exc)},
+        )
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------
