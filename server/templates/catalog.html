@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Catalog — MIT OCW Offline{% endblock %}
+{% block content %}
+
+{# ---- Stats ---- #}
+<div class="stats">
+  <div class="stat"><div class="num">{{ counts.total }}</div><div class="lbl">Total</div></div>
+  <div class="stat"><div class="num">{{ counts.completed }}</div><div class="lbl">Downloaded</div></div>
+  <div class="stat"><div class="num">{{ counts.downloading }}</div><div class="lbl">Downloading</div></div>
+  <div class="stat"><div class="num">{{ counts.pending }}</div><div class="lbl">Pending</div></div>
+  <div class="stat"><div class="num">{{ counts.failed }}</div><div class="lbl">Failed</div></div>
+</div>
+
+{# ---- Banners ---- #}
+{% if started > 0 %}
+<div class="banner banner-info">
+  Started downloading <strong>{{ started }}</strong> course{{ 's' if started != 1 else '' }}.
+  This page will refresh automatically while downloads are in progress.
+</div>
+{% endif %}
+
+{% if bulk_running %}
+<div class="banner banner-info">
+  Bulk download is running in the background. The page will refresh every 15 seconds.
+</div>
+{% endif %}
+
+{# ---- Action bar ---- #}
+<div class="action-bar">
+  {% if counts.pending > 0 %}
+  <form method="post" action="/api/download-all">
+    <button type="submit" class="btn btn-primary"
+      onclick="return confirm('Start downloading all {{ counts.pending }} pending courses?\n\nThis will run in the background and may take a very long time.')">
+      Download All Pending ({{ counts.pending }})
+    </button>
+  </form>
+  {% endif %}
+
+  {% if counts.failed > 0 %}
+  <form method="post" action="/api/download-all?include_failed=true">
+    <button type="submit" class="btn btn-warning"
+      onclick="return confirm('Retry all {{ counts.failed }} failed courses?')">
+      Retry All Failed ({{ counts.failed }})
+    </button>
+  </form>
+  {% endif %}
+</div>
+
+{# ---- Filter bar ---- #}
+<form class="search-bar" method="get" action="/catalog">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search title, department, course number…">
+  <select name="status">
+    <option value="">All statuses</option>
+    <option value="pending"     {% if status_filter == 'pending'     %}selected{% endif %}>Pending</option>
+    <option value="downloading" {% if status_filter == 'downloading' %}selected{% endif %}>Downloading</option>
+    <option value="completed"   {% if status_filter == 'completed'   %}selected{% endif %}>Downloaded</option>
+    <option value="failed"      {% if status_filter == 'failed'      %}selected{% endif %}>Failed</option>
+  </select>
+  <select name="department">
+    <option value="">All departments</option>
+    {% for dept in departments %}
+    <option value="{{ dept }}" {% if department_filter == dept %}selected{% endif %}>{{ dept }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-secondary">Filter</button>
+  {% if q or status_filter or department_filter %}
+  <a href="/catalog" class="btn btn-secondary">Clear</a>
+  {% endif %}
+</form>
+
+{# ---- Course table ---- #}
+{% if courses %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th class="col-num">Number</th>
+      <th>Title</th>
+      <th class="col-dept">Department</th>
+      <th class="col-level">Level</th>
+      <th class="col-term">Term</th>
+      <th class="col-status">Status</th>
+      <th class="col-action"></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for course in courses %}
+  {% set is_running = course.slug in running_slugs %}
+  <tr>
+    <td>{{ course.course_number or '—' }}</td>
+    <td>
+      {% if course.status == 'completed' %}
+        <a href="/course/{{ course.slug }}">{{ course.title or course.slug }}</a>
+      {% else %}
+        {{ course.title or course.slug }}
+      {% endif %}
+    </td>
+    <td>{{ course.department or '—' }}</td>
+    <td>{{ course.level or '—' }}</td>
+    <td>{% if course.term and course.year %}{{ course.term }} {{ course.year }}{% else %}—{% endif %}</td>
+    <td>
+      {% if is_running %}
+        <span class="badge badge-downloading">downloading</span>
+      {% else %}
+        <span class="badge badge-{{ course.status }}">{{ course.status }}</span>
+      {% endif %}
+    </td>
+    <td style="text-align:right;">
+      {% if is_running %}
+        <button class="btn btn-sm btn-secondary" disabled>In progress…</button>
+      {% elif course.status == 'completed' %}
+        <form method="post" action="/api/download/{{ course.slug }}">
+          <button type="submit" class="btn btn-sm btn-secondary"
+            onclick="return confirm('Re-download {{ course.title | replace("'", "\\'") or course.slug }}?')">
+            Re-download
+          </button>
+        </form>
+      {% else %}
+        <form method="post" action="/api/download/{{ course.slug }}">
+          <button type="submit" class="btn btn-sm btn-primary">
+            {% if course.status == 'failed' %}Retry{% else %}Download{% endif %}
+          </button>
+        </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<p style="margin-top:0.75rem; font-size:0.8rem; color:#999;">
+  Showing {{ courses|length }} course{{ 's' if courses|length != 1 else '' }}.
+</p>
+
+{% else %}
+<div class="empty">
+  {% if q or status_filter or department_filter %}
+  <p>No courses match your filters.</p>
+  {% else %}
+  <p>No courses in the catalog yet.</p>
+  <p style="margin-top:0.75rem;">Run: <code>docker compose run --rm worker fetch-catalog</code></p>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ---- Auto-refresh while downloads are active ---- #}
+<script>
+  const hasActive = {{ 'true' if (counts.downloading > 0 or running_slugs or bulk_running) else 'false' }};
+  if (hasActive) {
+    setTimeout(() => location.reload(), 15000);
+  }
+</script>
+
+{% endblock %}

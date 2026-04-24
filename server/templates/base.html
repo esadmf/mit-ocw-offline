@@ -115,6 +115,39 @@
     .file-list a:hover { text-decoration: underline; }
     .file-size { font-size: 0.75rem; color: #999; margin-left: auto; flex-shrink: 0; }
 
+    /* Catalog table */
+    .data-table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #ddd; border-radius: 6px; overflow: hidden; font-size: 0.85rem; }
+    .data-table th { background: #f0f0f0; font-weight: 600; text-align: left; padding: 0.6rem 0.9rem; border-bottom: 2px solid #ddd; color: #444; white-space: nowrap; }
+    .data-table td { padding: 0.55rem 0.9rem; border-bottom: 1px solid #eee; vertical-align: middle; }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:hover td { background: #fafafa; }
+    .data-table .col-num   { width: 7rem; }
+    .data-table .col-dept  { width: 14rem; }
+    .data-table .col-level { width: 8rem; }
+    .data-table .col-term  { width: 7rem; }
+    .data-table .col-status{ width: 8rem; }
+    .data-table .col-action{ width: 8rem; text-align: right; }
+
+    /* Action buttons */
+    .btn { display: inline-block; padding: 0.35rem 0.85rem; border-radius: 4px; border: none; font-size: 0.8rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: background .15s; }
+    .btn-primary  { background: #8a1500; color: #fff; }
+    .btn-primary:hover  { background: #6e1100; }
+    .btn-secondary{ background: #e9ecef; color: #333; }
+    .btn-secondary:hover{ background: #d0d4d8; }
+    .btn-warning  { background: #ffc107; color: #333; }
+    .btn-warning:hover  { background: #e0a800; }
+    .btn-sm { padding: 0.22rem 0.6rem; font-size: 0.75rem; }
+    .btn:disabled, .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+    /* Action bar above tables */
+    .action-bar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+    .action-bar .spacer { flex: 1; }
+
+    /* Banner / alert */
+    .banner { padding: 0.7rem 1rem; border-radius: 6px; margin-bottom: 1.25rem; font-size: 0.88rem; }
+    .banner-info  { background: #cce5ff; color: #004085; border: 1px solid #b8daff; }
+    .banner-warn  { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+
     /* Empty state */
     .empty { text-align: center; padding: 3rem 1rem; color: #999; }
     .empty code { background: #f0f0f0; padding: 0.2rem 0.5rem; border-radius: 3px; font-size: 0.85rem; color: #333; }
@@ -136,9 +169,8 @@
       <p>Personal offline library</p>
     </div>
     <nav>
-      <a href="/">All</a>
-      <a href="/?status=completed">Downloaded</a>
-      <a href="/?status=pending">Pending</a>
+      <a href="/">Library</a>
+      <a href="/catalog">Catalog</a>
     </nav>
   </div>
 </header>
