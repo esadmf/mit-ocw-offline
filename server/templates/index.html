@@ -9,7 +9,8 @@
 </div>
 
 <form class="search-bar" method="get" action="/">
-  <input type="text" name="q" value="{{ q }}" placeholder="Search title, department, course number…">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search title, department, course number…" style="flex:2; min-width:220px;">
+
   <select name="status">
     <option value="">All statuses</option>
     <option value="completed"   {% if status_filter == 'completed'   %}selected{% endif %}>Downloaded</option>
@@ -17,15 +18,39 @@
     <option value="failed"      {% if status_filter == 'failed'      %}selected{% endif %}>Failed</option>
     <option value="available"   {% if status_filter == 'available'   %}selected{% endif %}>Available</option>
   </select>
+
   <select name="department">
     <option value="">All departments</option>
     {% for dept in departments %}
     <option value="{{ dept }}" {% if department_filter == dept %}selected{% endif %}>{{ dept }}</option>
     {% endfor %}
   </select>
-  <button type="submit">Search</button>
-  {% if q or status_filter or department_filter %}
-  <a href="/" style="align-self:center; font-size:0.85rem; margin-left:0.25rem;">Clear</a>
+
+  <select name="level">
+    <option value="">All levels</option>
+    {% for lvl in levels %}
+    <option value="{{ lvl }}" {% if level_filter == lvl %}selected{% endif %}>{{ lvl }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="year">
+    <option value="">All years</option>
+    {% for y in years %}
+    <option value="{{ y }}" {% if year_filter == y|string %}selected{% endif %}>{{ y }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="sort">
+    <option value="status"     {% if sort == 'status'     %}selected{% endif %}>Sort: Downloaded first</option>
+    <option value="title"      {% if sort == 'title'      %}selected{% endif %}>Sort: Title</option>
+    <option value="department" {% if sort == 'department' %}selected{% endif %}>Sort: Department</option>
+    <option value="year"       {% if sort == 'year'       %}selected{% endif %}>Sort: Year (newest)</option>
+    <option value="number"     {% if sort == 'number'     %}selected{% endif %}>Sort: Course Number</option>
+  </select>
+
+  <button type="submit" class="btn btn-secondary">Filter</button>
+  {% if q or status_filter or department_filter or year_filter or level_filter or sort != 'status' %}
+  <a href="/" class="btn btn-secondary">Clear</a>
   {% endif %}
 </form>
 

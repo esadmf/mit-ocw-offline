@@ -88,7 +88,15 @@ def health():
 # ---------------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request, q: str = "", status: str = "", department: str = ""):
+async def index(
+    request: Request,
+    q: str = "",
+    status: str = "",
+    department: str = "",
+    year: str = "",
+    level: str = "",
+    sort: str = "status",
+):
     db = SessionLocal()
     query = db.query(Course)
     if q:
@@ -102,7 +110,11 @@ async def index(request: Request, q: str = "", status: str = "", department: str
     if status:
         query = query.filter(Course.status == status)
     if department:
-        query = query.filter(Course.department.ilike(f"%{department}%"))
+        query = query.filter(Course.department == department)
+    if year:
+        query = query.filter(Course.year == int(year))
+    if level:
+        query = query.filter(Course.level == level)
 
     status_order = case(
         (Course.status == "completed",   0),
@@ -110,11 +122,34 @@ async def index(request: Request, q: str = "", status: str = "", department: str
         (Course.status == "failed",      2),
         else_=3,
     )
-    courses = query.order_by(status_order, Course.title).all()
-    total = db.query(Course).count()
+    if sort == "year":
+        courses = query.order_by(Course.year.desc().nulls_last(), Course.title).all()
+    elif sort == "department":
+        courses = query.order_by(Course.department.nulls_last(), Course.course_number, Course.title).all()
+    elif sort == "title":
+        courses = query.order_by(Course.title).all()
+    elif sort == "number":
+        courses = query.order_by(Course.course_number.nulls_last(), Course.title).all()
+    else:  # "status" — downloaded first
+        courses = query.order_by(status_order, Course.title).all()
+
+    total      = db.query(Course).count()
     completed  = db.query(Course).filter_by(status="completed").count()
     available  = db.query(Course).filter_by(status="available").count()
-    departments = sorted({c.department for c in db.query(Course).all() if c.department})
+    from sqlalchemy import distinct
+    departments = sorted(
+        r[0] for r in db.query(distinct(Course.department))
+        .filter(Course.department.isnot(None)).all()
+    )
+    years = sorted(
+        (r[0] for r in db.query(distinct(Course.year))
+         .filter(Course.year.isnot(None)).all()),
+        reverse=True,
+    )
+    levels = sorted(
+        r[0] for r in db.query(distinct(Course.level))
+        .filter(Course.level.isnot(None)).all()
+    )
     db.close()
 
     return TEMPLATES.TemplateResponse(request, "index.html", {
@@ -123,9 +158,14 @@ async def index(request: Request, q: str = "", status: str = "", department: str
         "completed": completed,
         "available": available,
         "departments": departments,
+        "years": years,
+        "levels": levels,
         "q": q,
         "status_filter": status,
         "department_filter": department,
+        "year_filter": year,
+        "level_filter": level,
+        "sort": sort,
     })
 
 

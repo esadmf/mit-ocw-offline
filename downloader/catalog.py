@@ -171,8 +171,17 @@ def _extract_metadata(url: str, html: str) -> dict:
             continue
 
     og = lambda prop: (soup.find("meta", property=prop) or {}).get("content", "") or ""
+
+    og_title = og("og:title")
     if not meta.get("title"):
-        meta["title"] = og("og:title").replace(" | MIT OpenCourseWare", "").strip() or None
+        meta["title"] = og_title.split("|")[0].strip() or None
+
+    # og:title format: "Course Title | Department | MIT OpenCourseWare"
+    if not meta.get("department") and og_title:
+        parts = [p.strip() for p in og_title.split("|")]
+        if len(parts) >= 3 and parts[-1] == "MIT OpenCourseWare":
+            meta["department"] = parts[-2]
+
     if not meta.get("description"):
         meta["description"] = og("og:description") or None
     meta["image_url"] = og("og:image") or None
@@ -180,7 +189,7 @@ def _extract_metadata(url: str, html: str) -> dict:
     if not meta.get("title"):
         t = soup.find("title")
         if t:
-            meta["title"] = t.text.replace(" | MIT OpenCourseWare", "").strip()
+            meta["title"] = t.text.split("|")[0].strip()
 
     body_text = soup.get_text(" ", strip=True)
     for level in ("Undergraduate", "Graduate"):
@@ -234,7 +243,11 @@ async def fetch_catalog(limit: Optional[int] = None, skip_metadata: bool = False
 
         # Enrich with full metadata (titles, descriptions, departments).
         # Commit every 20 courses so progress is visible in the UI.
-        to_enrich = db.query(Course).filter(Course.title.is_(None)).all()
+        to_enrich = (
+            db.query(Course)
+            .filter(Course.title.is_(None) | Course.department.is_(None))
+            .all()
+        )
         if not to_enrich:
             console.print("[green]All courses already have metadata.[/green]")
             db.close()
