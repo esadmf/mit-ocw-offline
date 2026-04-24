@@ -40,16 +40,22 @@
     {% endfor %}
   </select>
 
+  <select name="has_videos">
+    <option value=""  {% if not has_videos %}selected{% endif %}>All courses</option>
+    <option value="1" {% if has_videos %}selected{% endif %}>Has videos</option>
+  </select>
+
   <select name="sort">
     <option value="status"     {% if sort == 'status'     %}selected{% endif %}>Sort: Downloaded first</option>
     <option value="title"      {% if sort == 'title'      %}selected{% endif %}>Sort: Title</option>
     <option value="department" {% if sort == 'department' %}selected{% endif %}>Sort: Department</option>
     <option value="year"       {% if sort == 'year'       %}selected{% endif %}>Sort: Year (newest)</option>
     <option value="number"     {% if sort == 'number'     %}selected{% endif %}>Sort: Course Number</option>
+    <option value="videos"     {% if sort == 'videos'     %}selected{% endif %}>Sort: Videos first</option>
   </select>
 
   <button type="submit" class="btn btn-secondary">Filter</button>
-  {% if q or status_filter or department_filter or year_filter or level_filter or sort != 'status' %}
+  {% if q or status_filter or department_filter or year_filter or level_filter or has_videos or sort != 'status' %}
   <a href="/" class="btn btn-secondary">Clear</a>
   {% endif %}
 </form>
@@ -67,7 +73,15 @@
     {% if course.description %}
     <div class="card-desc">{{ course.description }}</div>
     {% endif %}
-    <span class="badge badge-{{ course.status }}">{{ course.status }}</span>
+    <div style="display:flex; align-items:center; gap:0.4rem; margin-top:0.6rem; flex-wrap:wrap;">
+      <span class="badge badge-{{ course.status }}">{{ course.status }}</span>
+      {% if course.video_count and course.video_count > 0 %}
+      <span class="badge-video" title="{{ course.video_count }} video{{ 's' if course.video_count != 1 else '' }}">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="17" y1="7" x2="22" y2="7"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="2" y1="17" x2="7" y2="17"/></svg>
+        {{ course.video_count }}
+      </span>
+      {% endif %}
+    </div>
   </div>
   {% endfor %}
 </div>

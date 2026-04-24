@@ -96,6 +96,7 @@ async def index(
     year: str = "",
     level: str = "",
     sort: str = "status",
+    has_videos: str = "",
 ):
     db = SessionLocal()
     query = db.query(Course)
@@ -115,6 +116,8 @@ async def index(
         query = query.filter(Course.year == int(year))
     if level:
         query = query.filter(Course.level == level)
+    if has_videos:
+        query = query.filter(Course.video_count > 0)
 
     status_order = case(
         (Course.status == "completed",   0),
@@ -130,6 +133,9 @@ async def index(
         courses = query.order_by(Course.title).all()
     elif sort == "number":
         courses = query.order_by(Course.course_number.nulls_last(), Course.title).all()
+    elif sort == "videos":
+        video_order = case((Course.video_count > 0, 0), else_=1)
+        courses = query.order_by(video_order, Course.video_count.desc(), Course.title).all()
     else:  # "status" — downloaded first
         courses = query.order_by(status_order, Course.title).all()
 
@@ -166,6 +172,7 @@ async def index(
         "year_filter": year,
         "level_filter": level,
         "sort": sort,
+        "has_videos": has_videos,
     })
 
 
