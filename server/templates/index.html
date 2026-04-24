@@ -95,4 +95,10 @@
 </div>
 {% endif %}
 
+<script>
+  if ({{ 'true' if any_active else 'false' }}) {
+    setTimeout(() => location.reload(), 10000);
+  }
+</script>
+
 {% endblock %}

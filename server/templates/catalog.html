@@ -185,9 +185,8 @@
 
 {# ---- Auto-refresh while downloads are active ---- #}
 <script>
-  const hasActive = {{ 'true' if (counts.downloading > 0 or running_slugs or bulk_running or catalog_running) else 'false' }};
-  if (hasActive) {
-    setTimeout(() => location.reload(), 15000);
+  if ({{ 'true' if (counts.downloading > 0 or running_slugs or bulk_running or catalog_running) else 'false' }}) {
+    setTimeout(() => location.reload(), 10000);
   }
 </script>
 

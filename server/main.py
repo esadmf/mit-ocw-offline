@@ -156,6 +156,13 @@ async def index(
         r[0] for r in db.query(distinct(Course.level))
         .filter(Course.level.isnot(None)).all()
     )
+    global _bulk_task, _catalog_task
+    any_active = (
+        bool(_running_slugs())
+        or (_bulk_task    is not None and not _bulk_task.done())
+        or (_catalog_task is not None and not _catalog_task.done())
+        or db.query(Course).filter_by(status="downloading").count() > 0
+    )
     db.close()
 
     return TEMPLATES.TemplateResponse(request, "index.html", {
@@ -173,6 +180,7 @@ async def index(
         "level_filter": level,
         "sort": sort,
         "has_videos": has_videos,
+        "any_active": any_active,
     })
 
 
